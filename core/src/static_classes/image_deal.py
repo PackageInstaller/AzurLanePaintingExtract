@@ -6,12 +6,43 @@ from functools import reduce
 import PIL.Image
 from re import match, split
 
-import wx
+try:
+    import wx
+except ImportError:  # CLI 模式不需要 GUI
+    wx = None
 
-from core.src.structs_classes.extract_structs import PerInfo
+try:
+    from core.src.structs_classes.extract_structs import PerInfo
+except ImportError:
+    PerInfo = None
 
 
 class ImageWork(object):
+    @staticmethod
+    def paste_face(target, face, pos):
+        """透明混合背景与表情 (原 FaceMatchFrame.paste_face 逻辑)。"""
+        import numpy
+        from PIL import Image, ImageChops
+
+        x, y = int(pos[0]), int(pos[1])
+        target_bg = target.crop([x, y, x + face.width, y + face.height])
+        alpha = face.getchannel("A")
+        alpha_f = alpha
+        alpha_g = target_bg.getchannel("A")
+        a_f = ImageChops.lighter(alpha_f, alpha_g)
+        al = numpy.array(alpha, dtype=float)
+        scale = al / 255
+        face_a = numpy.array(face)
+        bg_a = numpy.array(target_bg)
+        alpha_data = numpy.array(a_f)
+        for i in range(3):
+            bg_a[:, :, i] = bg_a[:, :, i] * (1 - scale)
+            face_a[:, :, i] = face_a[:, :, i] * scale
+        f_target = bg_a + face_a
+        f_target[:, :, 3] = alpha_data
+        target.paste(Image.fromarray(f_target), (x, y))
+        return target
+
     @staticmethod
     def show_in_bitmap_contain(img, bitmap):
         temp = wx.Bitmap.FromBufferRGBA(img.width, img.height, img.tobytes())

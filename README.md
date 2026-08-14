@@ -1,47 +1,62 @@
-# AzurLanePaintingExtract-v1.0
-### 工具：
----------------------
-| 工具 | 介绍
-|:--:|:--|
-| [asset studio](https://github.com/Perfare/AssetStudio) | 居家旅行常备的解包工具 |
-| [UABE](https://github.com/DerPopo/UABE) | 可以获取Path_ID，还可以进行[Unity](https://unity.com/)封包 |
-------------------
-### 功能介绍
-------------------
-|功能|适用范围|效果|需求|
-|:--:|:-----:|:---:|:--:|
-| 基本立绘处理功能 | 针对[碧蓝航线](https://game.bilibili.com/blhx/)角色立绘，是本脚本的核心功能 | 将破碎的原始解包立绘恢复原样 | 至少一张Texure2D（.png），至少一个Mesh(.obj) |
-| 立绘附加表情功能 | 针对[碧蓝航线](https://game.bilibili.com/blhx/)角色差分表情，和部分立绘没有头而开发的功能 | 能为立绘附加面部表情（正在考虑用Path_ID进行匹配） | 可以为一个角色单个或组合进行附加表情 | 符合基本立绘处理功能的要求即可 |
-| Q版（[Spine](http://zh.esotericsoftware.com/)）小人切割 | 适用所有的atlas切割（[Spine](http://zh.esotericsoftware.com/)） | 将单张的贴图切割成图片组 | 至少一张Texuture2D（.png）和一个Atlas（.atlas|.atlas.txt）|
-| Sprite切割 | 针对[Unity](https://unity.com/)的Sprite的切割功能，理论上适用所有Unity Sprite对象 | 参考被切割图片PathID和Sprite的Dump文件，切割原始图片，获得图片组 | 至少一个Texture2D（.png）,一个Dump(.txt) |
-------------
-### 历次更新介绍
-#### 1.X版本
-* [【碧蓝航线】立绘辅助处理工具-1.4](https://www.bilibili.com/read/cv5048786)
-* [【碧蓝航线】立绘处理辅助工具v1.2更新](https://www.bilibili.com/read/cv3983757)
-* [【碧蓝航线】立绘导出工具-1.0重制版](https://www.bilibili.com/read/cv2801922)
---------------------------
-#### 0.X版本
-* [【碧蓝航线】AzurLane-PaintingExtract v 0.7.0更新内容](https://www.bilibili.com/read/cv1786736)
-* [【碧蓝航线】立绘，spine小人，Live2D](https://www.bilibili.com/read/cv1566510)
-* [【碧蓝航线】立绘还原程序 v-0.6.0更新](https://www.bilibili.com/read/preview/1439259)
-* [碧蓝航线立绘还原更新-v-0.2.0](https://www.bilibili.com/read/cv1316278)
-* [碧蓝航线立绘还原程序更新](https://www.bilibili.com/read/cv1127720)
-* [碧蓝航线立绘还原程序（GUI版本）更新](https://www.bilibili.com/read/cv1019910)
-* [碧蓝航线立绘还原程序（GUI版本）](https://www.bilibili.com/read/cv1013553)
-* [碧蓝航线立绘还原更新（批处理）](https://www.bilibili.com/read/cv941333)
-* [碧蓝航线立绘还原程序更新（1）](https://www.bilibili.com/read/cv936784)
-* [碧蓝航线立绘还原程序更新](https://www.bilibili.com/read/cv933308)
-* [AzurLanePaintingRestore更新](https://www.bilibili.com/read/cv911094)
-* [ AzurLinePaintingRestore更新](https://www.bilibili.com/read/cv893994)
-* [【碧蓝航线】立绘还原程序更新](https://www.bilibili.com/read/cv886956)
----------------------
-#### 教程
-* [【碧蓝航线】如何手动挖出舰娘的立绘](https://www.bilibili.com/read/cv1330829)
-* [ 如何挖出碧蓝航线的立绘教程（简单版）](https://www.bilibili.com/read/cv894737)
-* [ 如何手动挖出碧蓝航线的立绘](https://www.bilibili.com/read/cv565639)
----------------------
-#### Bigfun页面
-* [正在更新中](https://www.bigfun.cn/post/219941)
----------------------
-![image](https://i0.hdslb.com/bfs/bigfun/69c19a99f508849b846931cedd339d8034a9e18a.png@760w_1o_1g)
+# AzurLanePaintingExtract (CLI)
+
+碧蓝航线立绘还原 CLI。已移除 wxPython GUI，只保留还原与批处理。
+
+## 安装依赖
+
+- Python 3.9+
+- `pip install UnityPy Pillow numpy requests rich`
+- `luajit-decompiler`（Arch 下可用 AUR 包 `luajit-decompiler-git`）
+- 转换器 `azl2std.py / azl_bytecode.py` 已随仓库提供，无需外部依赖。
+
+## 用法
+
+```bash
+python3 cli.py --help
+```
+
+### 批量还原（推荐）
+
+```bash
+python3 cli.py batch --out <游戏目录> --jobs 16
+```
+
+读取 `<游戏目录>/Assets/painting/*_tex`，内存还原后输出到
+`<游戏目录>/Painting/<船名>/碧蓝航线_<船名>[<皮肤名>][<变体>].png`。
+
+- 主立绘优先 `_rw`（全身人物立绘），无 `_rw` 时用无后缀；
+- 有 `_rw` 时基础半身包输出为 `_半身`，是否用外部 Mesh 按 prefab 决定
+  （半身节点 `mMesh != 0` 就拼 Mesh，否则用 Sprite 原图）；
+- 主立绘（无后缀文件）只在 `ship_skin_expression[key].default` 非空时
+  按 prefab `face` 节点定位并粘贴该默认表情，直接合成进
+  `碧蓝航线_<人名>[<皮肤名>].png`；
+- `default` 非空时，`paintingface/<key>` 里的全部表情差分导出为
+  `..._表情<N>.png`；普通立绘不导出 `_表情` 文件；
+- 表情位置按 `MeshImage.OnPopulateMesh` 公式计算，主立绘画布使用
+  prefab 的 `mRawSpriteSize`，替代贴图 key（如 `xipeier_idolns`）
+  同样按同一公式贴，不再硬编码偏移；
+- 只有 Mesh 的变体包（`_bg` / `_shophx` / `_hx`）自动配对同名基础贴图；
+- 纯动画包（`*_memory*` / `*_ani*`）跳过；
+- 本地偏移索引不完整时直接从 `sharecfgdata` 二进制顺序流扫描重建
+  完整索引（每条记录自带 uleb 长度和 id 常量），完全离线；
+  社区完整索引仅作扫描失败时的回退；
+- `{namecode:N}` 按 `name_code` 表解析为中文名。
+
+### 单张还原
+
+```bash
+python3 cli.py restore Assets/painting/xxx_tex [--bust] [--out out.png]
+```
+
+表情图来自 `Assets/paintingface/<key>`。只有 `default` 槽位非空的皮肤
+才会合成（如 `xipeier_idol` 的 default=1）；`aila` 这类 default 为空的
+皮肤不会贴事件表情（其 home=6 只用于主界面事件）。
+
+## 目录
+
+- `cli.py`：命令行入口
+- `core/src/static_classes/batch_restore.py`：批量还原 + 命名
+- `core/src/static_classes/azl2std.py` / `azl_bytecode.py`：魔改 LuaJIT
+  字节码转标准格式
+- `core/src/static_classes/image_deal.py`：原版 Mesh 拼接与透明混合
+- `core/src/static_classes/static_data.py` / `search_order.py`：纯逻辑
