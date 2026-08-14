@@ -1,6 +1,6 @@
 """碧蓝航线立绘资源增量下载。
 
-只同步 painting/ 与 paintingface/ 两个前缀, 其余资产不动。
+只同步 painting/、paintingface/、sharecfgdata/ 与 scripts64 (64 位脚本)
 每次运行先与登录服握手取最新清单, 对比本地 md5, 缺失/变化的
 直接写回 Assets (覆盖), 返回本次更新的 *_tex 文件名列表。
 """
@@ -56,7 +56,7 @@ DEFAULT_MANIFESTS = [
     "$l2dhash$1522$120e2ce1a981ac61",
     "$cvhash$1415$d53050872f4174ea",
 ]
-PAINTING_PREFIXES = ("painting/", "paintingface/")
+RESOURCE_PREFIXES = ("painting/", "paintingface/", "sharecfgdata/")
 
 
 def fetch_live_manifest_names(timeout: float = 3.0):
@@ -111,9 +111,9 @@ def load_manifests(cdns, platform, manifest_names):
     for name in manifest_names:
         entries = load_manifest(cdns, platform, name)
         for path, value in entries.items():
-            if path.startswith(PAINTING_PREFIXES):
+            if path == "scripts64" or path.startswith(RESOURCE_PREFIXES):
                 merged[path] = value
-    console.print(f"[cyan]立绘清单合并: {len(merged)} 条[/cyan]")
+    console.print(f"[cyan]资源清单合并: {len(merged)} 条[/cyan]")
     return merged
 
 
@@ -168,8 +168,8 @@ def download_one(cdns, platform, path, size, md5, dest, progress, task_id):
     return path, last_err
 
 
-def sync_paintings(out_root, jobs=8):
-    """检查并下载立绘资源, 返回本次更新的 painting/*_tex 文件名列表。"""
+def sync_assets(out_root, jobs=8):
+    """检查并下载立绘与数据表, 返回本次更新的 painting/*_tex 文件名列表。"""
     cdns = list(DEFAULT_CDNS)
     try:
         names, _ = fetch_live_manifest_names()
@@ -191,7 +191,7 @@ def sync_paintings(out_root, jobs=8):
         console.print("[green]立绘无更新[/green]")
         return []
 
-    console.print(f"[cyan]更新立绘 {len(pending)} 条 -> Assets[/cyan]")
+    console.print(f"[cyan]更新资源 {len(pending)} 条 -> Assets[/cyan]")
     pending.sort(key=lambda t: -t[1])
     fail = 0
     with Progress(
@@ -202,7 +202,7 @@ def sync_paintings(out_root, jobs=8):
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task_id = progress.add_task("下载立绘", total=sum(t[1] for t in pending))
+        task_id = progress.add_task("下载资源", total=sum(t[1] for t in pending))
         with ThreadPoolExecutor(max_workers=jobs) as ex:
             futs = [
                 ex.submit(download_one, cdns, DEFAULT_PLATFORM, p, s, m, d, progress, task_id)
@@ -219,5 +219,8 @@ def sync_paintings(out_root, jobs=8):
         for p, _, _, _ in pending
         if p.startswith("painting/") and p.endswith("_tex") and os.path.isfile(os.path.join(assets_dir, p))
     ]
-    console.print(f"[green]立绘下载完成: 更新 {len(updated)} 个 *_tex, 失败 {fail}[/green]")
+    console.print(f"[green]资源下载完成: 更新 {len(updated)} 个 *_tex, 失败 {fail}[/green]")
     return updated
+
+
+sync_paintings = sync_assets  # 兼容旧名

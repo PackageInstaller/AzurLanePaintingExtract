@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 碧蓝航线立绘批量还原编排入口。
 
@@ -24,6 +22,7 @@ from rich.progress import (
 )
 
 from .datatables import _find_lua, _parse_expression_defaults, parse_painting_groups
+from .lua_extract import ensure_needed_lua
 from .naming import output_name
 from .painting_assets import (
     _bust_uses_mesh,
@@ -48,7 +47,7 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
         try:
             from . import downloader
 
-            updated = downloader.sync_paintings(out_root, jobs=jobs)
+            updated = downloader.sync_assets(out_root, jobs=jobs)
         except Exception as e:
             console.print(f"[yellow]立绘下载失败({e}), 使用本地资产[/yellow]")
     if updated is not None and not full and not updated:
@@ -64,6 +63,8 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
             "skipped": [],
         }
 
+    if not ensure_needed_lua(out_root, jobs=jobs):
+        raise RuntimeError("缺少 scripts64, 请先运行 batch 下载数据表")
     pfm_lua = _find_lua(out_root, "painting_filte_map.lua")
     if not pfm_lua:
         raise RuntimeError("缺少 painting_filte_map.lua, 请先下载并反编译数据表")

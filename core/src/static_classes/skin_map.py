@@ -13,7 +13,6 @@ from rich.console import Console
 from .azl2std import convert
 from .datatables import (
     _build_stream_index,
-    _ensure_community_index,
     _find_bin,
     _find_lua,
     _parse_name_code,
@@ -25,7 +24,7 @@ console = Console()
 
 PAINTING_OUT = "Painting"
 CACHE_FILE = "painting_skin_map.json"
-STATE_VERSION = 5
+STATE_VERSION = 6
 HEADER64 = b"\x1bLJ\x02\x0a"
 FOOTER = bytes(
     [24, 3, 0, 3, 0, 0, 1, 4, 75, 255, 0, 0, 44, 254, 0, 1, 37, 254, 1, 3, 50, 255, 1, 3, 0, 0]
@@ -75,11 +74,11 @@ def _build_skin_map(out_root, jobs=8, cache_path=None):
     stats_bin = _find_bin(out_root, "ship_data_statistics")
     missing = [
         p
-        for p in (skin_lua, stats_lua, pfm_lua, skin_bin, stats_bin)
+        for p in (pfm_lua, nc_lua, skin_bin, stats_bin)
         if not p
     ]
     if missing:
-        raise RuntimeError(f"缺少数据表: {missing}; 请先运行更新器下载 Assets 与 Lua")
+        raise RuntimeError(f"缺少数据表: {missing}; 请先运行 batch 下载数据表")
 
     def md5(p):
         with open(p, "rb") as f:
@@ -94,39 +93,17 @@ def _build_skin_map(out_root, jobs=8, cache_path=None):
     skin_idx_mode = "stream" if len(skin_idx) >= 2500 else "lua"
     stats_idx_mode = "stream" if len(stats_idx) >= 3500 else "lua"
     if len(skin_idx) < 2500:
-        skin_idx = parse_stream_index(skin_lua)
-        console.print(
-            "[yellow]二进制流扫描未得到完整索引, 退回 Lua 索引[/yellow]"
-        )
-        try:
-            ci = _ensure_community_index(out_root, "ship_skin_template.lua")
-            cidx = parse_stream_index(ci, table_var="cs")
-            if len(cidx) > len(skin_idx):
-                skin_lua_used = ci
-                skin_idx = cidx
-                skin_idx_mode = "community"
-                console.print(
-                    "[cyan]使用社区完整索引: ship_skin_template[/cyan]"
-                )
-        except Exception as e:
-            console.print(f"[yellow]ship_skin_template 社区索引不可用: {e}[/yellow]")
+        skin_idx = parse_stream_index(skin_lua) if skin_lua else {}
+        skin_idx_mode = "lua"
+        console.print("[yellow]二进制流扫描失败, 退回本地 Lua 索引[/yellow]")
+        if len(skin_idx) < 2500:
+            raise RuntimeError("ship_skin_template 索引不完整, 无法构建映射")
     if len(stats_idx) < 3500:
-        stats_idx = parse_stream_index(stats_lua)
-        console.print(
-            "[yellow]二进制流扫描未得到完整索引, 退回 Lua 索引[/yellow]"
-        )
-        try:
-            ci = _ensure_community_index(out_root, "ship_data_statistics.lua")
-            cidx = parse_stream_index(ci, table_var="cs")
-            if len(cidx) > len(stats_idx):
-                stats_lua_used = ci
-                stats_idx = cidx
-                stats_idx_mode = "community"
-                console.print(
-                    "[cyan]使用社区完整索引: ship_data_statistics[/cyan]"
-                )
-        except Exception as e:
-            console.print(f"[yellow]ship_data_statistics 社区索引不可用: {e}[/yellow]")
+        stats_idx = parse_stream_index(stats_lua) if stats_lua else {}
+        stats_idx_mode = "lua"
+        console.print("[yellow]二进制流扫描失败, 退回本地 Lua 索引[/yellow]")
+        if len(stats_idx) < 3500:
+            raise RuntimeError("ship_data_statistics 索引不完整, 无法构建映射")
 
     src = {
         "skin_lua": md5(skin_lua_used) if skin_lua_used else None,

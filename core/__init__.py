@@ -1,1 +1,1 @@
-__all__=["assets", "src"]
+__all__ = ["src"]

@@ -150,33 +150,6 @@ def _build_stream_index(bin_path):
     return idx
 
 
-COMMUNITY_BASE = "https://raw.githubusercontent.com/AzurLaneTools/AzurLaneLuaScripts/main/CN/sharecfg"
-
-
-def _ensure_community_index(out_root, name):
-    """下载并缓存社区完整索引 (sharecfg/<name>)。"""
-    dst_dir = os.path.join(out_root, PAINTING_OUT, "community")
-    os.makedirs(dst_dir, exist_ok=True)
-    dst = os.path.join(dst_dir, name)
-    if os.path.isfile(dst):
-        return dst
-    url = f"{COMMUNITY_BASE}/{name}"
-    console.print(f"[cyan]下载社区完整索引: {name}[/cyan]")
-    tmp = dst + ".tmp"
-    try:
-        import urllib.request
-
-        urllib.request.urlretrieve(url, tmp)
-        os.replace(tmp, dst)
-    except Exception as e:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise RuntimeError(f"社区索引下载失败 {name}: {e}")
-    return dst
-
-
 def _parse_name_code(out_root):
     """name_code.lua -> {id: 中文名}。"""
     p = _find_lua(out_root, "name_code.lua")
@@ -231,5 +204,3 @@ def _parse_expression_defaults(out_root):
             continue
         result[painting.group(1)] = default.group(1)
     return result
-
-

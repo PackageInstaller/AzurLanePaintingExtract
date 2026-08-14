@@ -4,7 +4,9 @@ __all__ = [
     "batch_restore",
     "datatables",
     "downloader",
+    "lua_extract",
     "naming",
     "painting_assets",
+    "scipio",
     "skin_map",
 ]

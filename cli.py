@@ -12,7 +12,8 @@ AzurLanePaintingExtract CLI
         还原单个 *_tex 包 (Mesh 拼接 / Sprite 原图)
 
 示例:
-    python3 cli.py batch --out /home/rikka/Games/碧蓝/tools --jobs 16
+    python3 cli.py batch --jobs 16
+    python3 cli.py batch --jobs 16 --full
 """
 
 import argparse
@@ -21,13 +22,16 @@ import sys
 
 from core.src.static_classes import batch_restore
 
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 
 def main():
     ap = argparse.ArgumentParser(
         description="AzurLanePaintingExtract CLI",
         epilog=(
             "示例:\n"
-            "  python3 cli.py batch --out <游戏目录> --jobs 16\n"
+            "  python3 cli.py batch --jobs 16\n"
+            "  python3 cli.py batch --jobs 16 --full\n"
             "  python3 cli.py restore xxx_tex --out x.png\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -35,7 +39,6 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("batch", help="批量还原立绘")
-    p.add_argument("--out", default=os.getcwd(), help="游戏根目录")
     p.add_argument("--jobs", type=int, default=8)
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--full", action="store_true", help="忽略增量, 强制转换全部立绘")
@@ -47,7 +50,7 @@ def main():
 
     args = ap.parse_args()
     if args.cmd == "batch":
-        batch_restore.run(args.out, jobs=args.jobs, limit=args.limit, full=args.full)
+        batch_restore.run(PROJECT_ROOT, jobs=args.jobs, limit=args.limit, full=args.full)
     elif args.cmd == "restore":
         img = batch_restore.restore_bundle(args.tex, bust=args.bust)
         if img is None:
