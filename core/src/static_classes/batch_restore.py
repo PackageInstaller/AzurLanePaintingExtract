@@ -7,6 +7,7 @@
     painting_assets.py    Unity AssetBundle 还原与表情贴图
     naming.py             输出命名
 """
+import hashlib
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -50,19 +51,6 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
             updated = downloader.sync_assets(out_root, jobs=jobs)
         except Exception as e:
             console.print(f"[yellow]立绘下载失败({e}), 使用本地资产[/yellow]")
-    if updated is not None and not full and not updated:
-        console.print("[green]立绘无更新, 跳过转换[/green]")
-        return {
-            "total": 0,
-            "ok": 0,
-            "fail": 0,
-            "skip": 0,
-            "time": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
-            "updated": [],
-            "errors": {},
-            "skipped": [],
-        }
-
     if not ensure_needed_lua(out_root, jobs=jobs):
         raise RuntimeError("缺少 scripts64, 请先运行 batch 下载数据表")
     pfm_lua = _find_lua(out_root, "painting_filte_map.lua")
@@ -94,10 +82,6 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
         for f in os.listdir(painting_dir)
         if f.endswith("_tex") and f in res2key and "shadow" not in f
     )
-    if updated is not None and not full:
-        up = set(updated)
-        files = [f for f in files if f in up]
-        console.print(f"[cyan]仅转换更新立绘 {len(files)} 个[/cyan]")
     if not files:
         console.print("[green]没有需要转换的立绘[/green]")
         return {
@@ -179,8 +163,41 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
 
     out_dir = os.path.join(out_root, PAINTING_OUT)
     os.makedirs(out_dir, exist_ok=True)
-    console.print(f"[cyan]待还原 {len(files)} 个立绘 -> {out_dir}[/cyan]")
     expr_defaults = _parse_expression_defaults(out_root)
+
+    # 转换状态: 记录每个 *_tex 已转换时的源 md5。
+    # 需要转换 = 本次资产更新 ∪ 从未转换过 ∪ 输出缺失
+    state_path = os.path.join(out_dir, "painting_state.json")
+    state = {}
+    if os.path.isfile(state_path):
+        try:
+            state = json.load(open(state_path, encoding="utf-8"))
+        except Exception:
+            state = {}
+    if not full:
+        up = set(updated or [])
+        need = []
+        for f in files:
+            dst = os.path.join(out_dir, planned[f])
+            if f in up or f not in state or not os.path.exists(dst):
+                need.append(f)
+        files = need
+        console.print(
+            f"[cyan]待转换 {len(files)} 个立绘 (含资产更新/未转换/输出缺失)[/cyan]"
+        )
+    if not files:
+        console.print("[green]立绘无更新, 跳过转换[/green]")
+        return {
+            "total": 0,
+            "ok": 0,
+            "fail": 0,
+            "skip": 0,
+            "time": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+            "updated": list(updated or []),
+            "errors": {},
+            "skipped": [],
+        }
+    console.print(f"[cyan]待还原 {len(files)} 个立绘 -> {out_dir}[/cyan]")
 
     ok = fail = skip = 0
     errors = {}
@@ -276,6 +293,14 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
                         console.print(f"[red]失败 {fname}: {err}[/red]")
                 else:
                     ok += 1
+                    try:
+                        with open(os.path.join(painting_dir, fname), "rb") as fh:
+                            state[fname] = hashlib.md5(fh.read()).hexdigest()
+                    except OSError:
+                        pass
+
+    with open(state_path, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
 
     summary = {
         "total": len(files),

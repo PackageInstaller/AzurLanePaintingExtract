@@ -30,6 +30,10 @@ python3 cli.py batch --jobs 16 --full
 全部。所有资源、输出与缓存都在脚本所在目录（`Assets/`、`Lua/`、
 `Painting/`）。
 
+增量判断依据 `Painting/painting_state.json`：记录每个 `*_tex` 已转换
+时的源 md5。需要转换 = 本次资产有更新 ∪ 从未转换过 ∪ 输出文件缺失；
+资产无更新但从未转换（如首次运行或 Painting 被清空）也会正常补转。
+
 读取 `Assets/painting/*_tex`，内存还原后输出到
 `Painting/<船名>/碧蓝航线_<船名>[<皮肤名>][<变体>].png`。
 
