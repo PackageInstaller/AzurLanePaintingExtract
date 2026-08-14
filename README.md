@@ -55,8 +55,10 @@ python3 cli.py restore Assets/painting/xxx_tex [--bust] [--out out.png]
 ## 目录
 
 - `cli.py`：命令行入口
-- `core/src/static_classes/batch_restore.py`：批量还原 + 命名
+- `core/src/static_classes/batch_restore.py`：批量还原编排
+- `core/src/static_classes/datatables.py`：sharecfg Lua 索引/表达式/namecode 解析
+- `core/src/static_classes/skin_map.py`：皮肤/舰船名映射构建
+- `core/src/static_classes/painting_assets.py`：Unity 资产还原与表情贴图
+- `core/src/static_classes/naming.py`：输出命名
 - `core/src/static_classes/azl2std.py` / `azl_bytecode.py`：魔改 LuaJIT
   字节码转标准格式
-- `core/src/static_classes/image_deal.py`：原版 Mesh 拼接与透明混合
-- `core/src/static_classes/static_data.py` / `search_order.py`：纯逻辑
