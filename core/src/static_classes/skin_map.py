@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -24,7 +25,8 @@ console = Console()
 
 PAINTING_OUT = "Painting"
 CACHE_FILE = "painting_skin_map.json"
-STATE_VERSION = 4
+STATE_VERSION = 5
+HEADER64 = b"\x1bLJ\x02\x0a"
 FOOTER = bytes(
     [24, 3, 0, 3, 0, 0, 1, 4, 75, 255, 0, 0, 44, 254, 0, 1, 37, 254, 1, 3, 50, 255, 1, 3, 0, 0]
 )
@@ -243,5 +245,3 @@ def _build_skin_map(out_root, jobs=8, cache_path=None):
 # --------------------------------------------------------------------------
 # Mesh 还原
 # --------------------------------------------------------------------------
-
-
