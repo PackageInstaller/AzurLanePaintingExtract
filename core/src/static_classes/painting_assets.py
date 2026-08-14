@@ -460,9 +460,3 @@ def restore_bundle(path, bust=False, raw_size=None):
         return _stitch(*_decode_sprite_mesh(sprite), tex)
     return _crop_sprite(tex, sprite)
 
-
-# --------------------------------------------------------------------------
-# 命名
-# --------------------------------------------------------------------------
-
-

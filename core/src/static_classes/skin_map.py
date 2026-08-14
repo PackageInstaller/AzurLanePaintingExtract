@@ -217,8 +217,3 @@ def _build_skin_map(out_root, jobs=8, cache_path=None):
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(cache, f, ensure_ascii=False, indent=1)
     return skin_by_painting, ship_names, name_map
-
-
-# --------------------------------------------------------------------------
-# Mesh 还原
-# --------------------------------------------------------------------------

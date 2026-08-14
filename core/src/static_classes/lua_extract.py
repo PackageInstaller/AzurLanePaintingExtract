@@ -28,7 +28,7 @@ NEEDED_LUA = {
     "name_code.lua",
     "ship_skin_expression.lua",
 }
-STATE_FILE = "data_state.json"
+STATE_FILE = "Lua/version.json"
 SCRIPTS_NAME = "scripts64"
 
 

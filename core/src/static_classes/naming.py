@@ -28,10 +28,3 @@ def output_name(key, basename, skins, ship_names, name_map=None):
     else:
         fname = ship
     return _safe(ship), _safe(fname)
-
-
-# --------------------------------------------------------------------------
-# 主流程
-# --------------------------------------------------------------------------
-
-

@@ -30,10 +30,6 @@ def _find_bin(out_root, name):
     return p if os.path.isfile(p) else None
 
 
-# --------------------------------------------------------------------------
-# Lua 索引 / 分组解析
-# --------------------------------------------------------------------------
-
 
 def parse_painting_groups(lua_path):
     """painting_filte_map.lua -> {key: [res,...]}。"""
