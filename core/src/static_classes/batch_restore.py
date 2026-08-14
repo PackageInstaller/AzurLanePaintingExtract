@@ -39,9 +39,30 @@ from .skin_map import PAINTING_OUT, _build_skin_map
 
 console = Console()
 
-def run(out_root, jobs=8, limit=None):
-    """还原 Assets/painting 下全部立绘到 Painting/。"""
+def run(out_root, jobs=8, limit=None, sync=True, full=False):
+    """同步并还原立绘: 默认先检查更新, 只转换有更新的 *_tex。"""
     UnityPy.config.FALLBACK_UNITY_VERSION = UNITY_FALLBACK
+
+    updated = None
+    if sync:
+        try:
+            from . import downloader
+
+            updated = downloader.sync_paintings(out_root, jobs=jobs)
+        except Exception as e:
+            console.print(f"[yellow]立绘下载失败({e}), 使用本地资产[/yellow]")
+    if updated is not None and not full and not updated:
+        console.print("[green]立绘无更新, 跳过转换[/green]")
+        return {
+            "total": 0,
+            "ok": 0,
+            "fail": 0,
+            "skip": 0,
+            "time": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+            "updated": [],
+            "errors": {},
+            "skipped": [],
+        }
 
     pfm_lua = _find_lua(out_root, "painting_filte_map.lua")
     if not pfm_lua:
@@ -72,6 +93,22 @@ def run(out_root, jobs=8, limit=None):
         for f in os.listdir(painting_dir)
         if f.endswith("_tex") and f in res2key and "shadow" not in f
     )
+    if updated is not None and not full:
+        up = set(updated)
+        files = [f for f in files if f in up]
+        console.print(f"[cyan]仅转换更新立绘 {len(files)} 个[/cyan]")
+    if not files:
+        console.print("[green]没有需要转换的立绘[/green]")
+        return {
+            "total": 0,
+            "ok": 0,
+            "fail": 0,
+            "skip": 0,
+            "time": __import__("time").strftime("%Y-%m-%d %H:%M:%S"),
+            "updated": list(updated or []),
+            "errors": {},
+            "skipped": [],
+        }
     if limit:
         files = files[:limit]
 

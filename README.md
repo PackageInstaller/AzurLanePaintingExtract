@@ -21,6 +21,10 @@ python3 cli.py --help
 python3 cli.py batch --out <游戏目录> --jobs 16
 ```
 
+每次运行先通过登录服握手获取清单，只下载 `painting/` 与
+`paintingface/` 的缺失/变化资源，然后只转换本次更新的 `*_tex`；
+无更新时直接跳过。`--full` 可强制转换全部。
+
 读取 `<游戏目录>/Assets/painting/*_tex`，内存还原后输出到
 `<游戏目录>/Painting/<船名>/碧蓝航线_<船名>[<皮肤名>][<变体>].png`。
 
@@ -57,6 +61,7 @@ python3 cli.py restore Assets/painting/xxx_tex [--bust] [--out out.png]
 - `cli.py`：命令行入口
 - `core/src/static_classes/batch_restore.py`：批量还原编排
 - `core/src/static_classes/datatables.py`：sharecfg Lua 索引/表达式/namecode 解析
+- `core/src/static_classes/downloader.py`：立绘清单获取与增量下载
 - `core/src/static_classes/skin_map.py`：皮肤/舰船名映射构建
 - `core/src/static_classes/painting_assets.py`：Unity 资产还原与表情贴图
 - `core/src/static_classes/naming.py`：输出命名
