@@ -26,21 +26,66 @@ from .datatables import _find_lua, _parse_expression_defaults, parse_painting_gr
 from .lua_extract import ensure_needed_lua
 from .naming import output_name
 from .painting_assets import (
-    _bust_uses_mesh,
-    _face_placement,
-    _layer_raw_size,
-    _list_face_exprs,
-    _load_face_image,
-    _paste_face,
+    _SKIP_TEX_SUFFIXES,
+    _layer_tex_path,
+    _is_blank_image,
+    apply_prefab_faces,
+    _prefab_extra_layers,
+    _prefab_key_tex_path,
     UNITY_FALLBACK,
-    restore_bundle,
+    restore_prefab_painting,
 )
 from .skin_map import PAINTING_OUT, _build_skin_map
 
 console = Console()
 
-def run(out_root, jobs=8, limit=None, sync=True, full=False):
-    """同步并还原立绘: 默认先检查更新, 只转换有更新的 *_tex。"""
+def _name_tokens(name):
+    return name.split("_")
+
+
+def _is_shophx_name(name):
+    tokens = _name_tokens(name)
+    return "shophx" in tokens or ("shop" in tokens and "hx" in tokens)
+
+
+def _is_hx_name(name):
+    """资源名是否含和谐后缀 (_hx / _rw_hx / _n_hx 等), 不含 shop_hx。"""
+    if _is_shophx_name(name):
+        return False
+    return "hx" in _name_tokens(name)
+
+
+def _is_layer_only_name(name):
+    """front/rw/middle 等只作为 prefab 子层, 不单独出图。"""
+    tokens = _name_tokens(name)
+    for suf in _SKIP_TEX_SUFFIXES:
+        parts = suf.split("_")
+        if tokens[-len(parts) :] == parts:
+            return True
+    return False
+
+
+def _job_sources(out_root, prefab_key):
+    """该 prefab 还原会读到的 *_tex, 用于增量判断。"""
+    painting_dir = os.path.join(out_root, "Assets", "painting")
+    out = []
+    key_tex = _prefab_key_tex_path(painting_dir, prefab_key)
+    if key_tex:
+        out.append(os.path.basename(key_tex))
+    for layer in _prefab_extra_layers(out_root, prefab_key):
+        path = _layer_tex_path(painting_dir, layer["name"], prefab_key)
+        if path:
+            name = os.path.basename(path)
+            if name not in out:
+                out.append(name)
+    return out
+
+
+def run(out_root, jobs=8, limit=None, sync=True, full=False, include_hx=False):
+    """同步并还原立绘: 默认先检查更新, 只转换有更新的立绘。
+
+    include_hx: 为 True 时额外导出 _hx 和谐立绘; 默认跳过。
+    """
     UnityPy.config.FALLBACK_UNITY_VERSION = UNITY_FALLBACK
 
     updated = None
@@ -94,79 +139,69 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
             "errors": {},
             "skipped": [],
         }
-    if limit:
-        files = files[:limit]
-
-    # 每个 key 的主立绘: 有 _rw 时优先取 _rw (全身人物立绘)
-    files_by_key = {}
+    # 按皮肤 key 出图: 全背景一张, 有 _n prefab 再出部分背景一张
+    skin_keys = []
+    seen_key = set()
     for f in files:
         key = res2key[f]
-        files_by_key.setdefault(key, []).append(f[: -len("_tex")])
-    main_src = {}
-    for key, names in files_by_key.items():
-        main_src[key] = f"{key}_rw" if f"{key}_rw" in names else key
+        if key in seen_key:
+            continue
+        if (
+            _is_layer_only_name(key)
+            or _is_shophx_name(key)
+            or (_is_hx_name(key) and not include_hx)
+        ):
+            continue
+        seen_key.add(key)
+        skin_keys.append(key)
 
-    # 同一 船名+皮肤名 的主 key (最短/无替代后缀): 重名时保留无后缀名
+    paint_jobs = []
+    for key in skin_keys:
+        paint_jobs.append((key, key, ""))
+        if os.path.isfile(os.path.join(painting_dir, key + "_n")):
+            paint_jobs.append((key, key + "_n", "n"))
+        if include_hx:
+            if os.path.isfile(os.path.join(painting_dir, key + "_hx")):
+                paint_jobs.append((key, key + "_hx", "hx"))
+            if os.path.isfile(os.path.join(painting_dir, key + "_n_hx")):
+                paint_jobs.append((key, key + "_n_hx", "n_hx"))
+
     main_groups = {}
-    for f in files:
-        key = res2key[f]
-        main = main_src.get(key, key)
-        ship, name = output_name(key, main, skins, ship_names, name_map)
-        main_groups.setdefault((ship, name), []).append(key)
+    for key, prefab_key, variant in paint_jobs:
+        ship, name = output_name(key, key, skins, ship_names, name_map)
+        main_groups.setdefault((ship, name, variant), []).append(key)
     canonical_key = {
         grp: min(keys, key=lambda k: (len(k), k))
         for grp, keys in main_groups.items()
     }
-    key_canonical = {}
-    for grp, keys in main_groups.items():
-        ck = canonical_key[grp]
-        for k in keys:
-            key_canonical[k] = ck
 
-    # 预计算输出路径; 不同 key 解析出相同 船名+皮肤名 时追加 key 区分
     planned = {}
-    dup_count = {}
-    for f in files:
-        base = f[: -len("_tex")]
-        key = res2key[f]
-        main = main_src.get(key, key)
-        ship, name = output_name(key, base, skins, ship_names, name_map)
-        if base == key and main != key:
-            variant = "半身"
-        elif base == main:
-            variant = ""
-        else:
-            variant = (
-                base[len(key):].lstrip("_")
-                if base.lower().startswith(key.lower())
-                else base
-            )
+    used = set()
+    for key, prefab_key, variant in paint_jobs:
+        ship, name = output_name(key, key, skins, ship_names, name_map)
         if variant:
             name = f"{name}_{variant}"
         rel = os.path.join(ship, f"碧蓝航线_{name}.png")
-        planned[f] = rel
-        dup_count[rel] = dup_count.get(rel, 0) + 1
-    used = set()
-    for f in files:
-        rel = planned[f]
-        if dup_count[rel] > 1:
-            key = res2key[f]
-            if key_canonical.get(key) != key:
-                stem, ext = os.path.splitext(rel)
-                cand = f"{stem}_{key}{ext}"
-                n = 2
-                while cand in used:
-                    cand = f"{stem}_{key}_{n}{ext}"
-                    n += 1
-                planned[f] = cand
-        used.add(planned[f])
+        grp = (
+            output_name(key, key, skins, ship_names, name_map)[0],
+            output_name(key, key, skins, ship_names, name_map)[1],
+            variant,
+        )
+        if canonical_key.get(grp) != key:
+            stem, ext = os.path.splitext(rel)
+            cand = f"{stem}_{key}{ext}"
+            n = 2
+            while cand in used:
+                cand = f"{stem}_{key}_{n}{ext}"
+                n += 1
+            rel = cand
+        planned[(key, prefab_key, variant)] = rel
+        used.add(rel)
 
     out_dir = os.path.join(out_root, PAINTING_OUT)
     os.makedirs(out_dir, exist_ok=True)
     expr_defaults = _parse_expression_defaults(out_root)
 
-    # 转换状态: 记录每个 *_tex 已转换时的源 md5。
-    # 需要转换 = 本次资产更新 ∪ 从未转换过 ∪ 输出缺失
     state_path = os.path.join(out_dir, "painting_state.json")
     state = {}
     if os.path.isfile(state_path):
@@ -174,18 +209,26 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
             state = json.load(open(state_path, encoding="utf-8"))
         except Exception:
             state = {}
+    up = set(updated or [])
     if not full:
-        up = set(updated or [])
         need = []
-        for f in files:
-            dst = os.path.join(out_dir, planned[f])
-            if f in up or f not in state or not os.path.exists(dst):
-                need.append(f)
-        files = need
+        for job in paint_jobs:
+            key, prefab_key, variant = job
+            dst = os.path.join(out_dir, planned[job])
+            srcs = _job_sources(out_root, prefab_key)
+            if (
+                prefab_key not in state
+                or not os.path.exists(dst)
+                or any(s in up for s in srcs)
+            ):
+                need.append(job)
+        paint_jobs = need
         console.print(
-            f"[cyan]待转换 {len(files)} 个立绘 (含资产更新/未转换/输出缺失)[/cyan]"
+            f"[cyan]待转换 {len(paint_jobs)} 张立绘 (含资产更新/未转换/输出缺失)[/cyan]"
         )
-    if not files:
+    if limit:
+        paint_jobs = paint_jobs[:limit]
+    if not paint_jobs:
         console.print("[green]立绘无更新, 跳过转换[/green]")
         return {
             "total": 0,
@@ -197,77 +240,27 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
             "errors": {},
             "skipped": [],
         }
-    console.print(f"[cyan]待还原 {len(files)} 个立绘 -> {out_dir}[/cyan]")
+    console.print(f"[cyan]待还原 {len(paint_jobs)} 张立绘 -> {out_dir}[/cyan]")
 
     ok = fail = skip = 0
     errors = {}
     skipped = []
 
-    def one(fname):
-        base = fname[: -len("_tex")]
-        key = res2key[fname]
-        ship, name = output_name(key, base, skins, ship_names, name_map)
-        main = main_src.get(key, key)
-        bust = False
-        if base == key and main != key:
-            # 主立绘用 _rw, 无后缀的基础包是半身像, 单独输出 _半身
-            variant = "半身"
-            bust = True
-        elif base == main:
-            variant = ""
-        else:
-            variant = (
-                base[len(key):].lstrip("_")
-                if base.lower().startswith(key.lower())
-                else base
-            )
-        if variant:
-            name = f"{name}_{variant}"
-        rel = planned[fname]
+    def one(job):
+        key, prefab_key, variant = job
+        rel = planned[job]
         dst = os.path.join(out_dir, rel)
         try:
-            img = restore_bundle(
-                os.path.join(painting_dir, fname),
-                bust=bust and not _bust_uses_mesh(out_root, key),
-            )
-            if img is None:
-                return fname, None, "SKIP"
-            if variant == "" and expr_defaults.get(key) and not main.endswith("_rw"):
-                # key 层按 MeshImage 公式贴脸: 画布必须用 mRawSpriteSize,
-                # 否则裁掉顶部留白会导致脸错位 (如 xipeier_idolns)
-                raw = _layer_raw_size(out_root, key)
-                if raw:
-                    img = restore_bundle(
-                        os.path.join(painting_dir, fname),
-                        raw_size=raw,
-                    )
+            img = restore_prefab_painting(out_root, prefab_key)
+            if img is None or _is_blank_image(img):
+                return prefab_key, None, "SKIP"
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             img.save(dst)
-            if variant == "":
-                default = expr_defaults.get(key)
-                if default:
-                    exprs = _list_face_exprs(out_root, key)
-                else:
-                    exprs = []
-                if exprs:
-                    target_layer = "rw" if main.endswith("_rw") else "key"
-                    place = _face_placement(out_root, key, img.size, target_layer)
-                    if place:
-                        pos, fsize = place
-                        for ex in exprs:
-                            face = _load_face_image(out_root, key, ex)
-                            if face is None:
-                                continue
-                            fimg = face.resize(fsize) if face.size != fsize else face
-                            comp = img.copy()
-                            _paste_face(comp, fimg, pos)
-                            if default and ex == default:
-                                comp.save(dst)  # 主立绘合成默认表情
-                            else:
-                                comp.save(dst[: -len(".png")] + f"_表情{ex}.png")
-            return fname, rel, None
+            default = expr_defaults.get(key) or expr_defaults.get(prefab_key)
+            apply_prefab_faces(out_root, key, prefab_key, img, default, dst)
+            return prefab_key, rel, None
         except Exception as e:
-            return fname, None, f"{type(e).__name__}: {e}"
+            return prefab_key, None, f"{type(e).__name__}: {e}"
 
     with Progress(
         TextColumn("[progress.description]{task.description}"),
@@ -277,9 +270,9 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
         TimeRemainingColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("还原立绘", total=len(files))
+        task = progress.add_task("还原立绘", total=len(paint_jobs))
         with ThreadPoolExecutor(max_workers=jobs) as ex:
-            futs = [ex.submit(one, f) for f in files]
+            futs = [ex.submit(one, job) for job in paint_jobs]
             for fut in as_completed(futs):
                 fname, rel, err = fut.result()
                 progress.advance(task)
@@ -293,11 +286,7 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False):
                         console.print(f"[red]失败 {fname}: {err}[/red]")
                 else:
                     ok += 1
-                    try:
-                        with open(os.path.join(painting_dir, fname), "rb") as fh:
-                            state[fname] = hashlib.md5(fh.read()).hexdigest()
-                    except OSError:
-                        pass
+                    state[fname] = True
 
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)

@@ -7,7 +7,8 @@ from .datatables import _resolve_namecodes
 
 def _safe(name):
     name = re.sub(r'[\\/:*?"<>|]', "_", name)
-    name = name.rstrip(" .")
+    name = re.sub(r"_+", "_", name)
+    name = name.strip(" ._")
     return name or "_"
 
 

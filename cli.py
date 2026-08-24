@@ -4,10 +4,10 @@
 AzurLanePaintingExtract CLI
 
 子命令:
-    batch [--out DIR] [--jobs N] [--limit N]
+    batch [--jobs N] [--limit N] [--full] [--hx]
         先检查并下载 painting/paintingface 更新, 只转换有更新的立绘;
-        --full 强制转换全部
-        (自动把默认表情合成进主立绘)
+        --full 强制转换全部; --hx 额外导出和谐立绘 (默认跳过)
+        人物层 (_rw) 叠到背景 (key / _n) 上, 不单独导出半身/front/shop_hx
     restore TEX_PATH [--bust] [--out PNG]
         还原单个 *_tex 包 (Mesh 拼接 / Sprite 原图)
 
@@ -42,6 +42,11 @@ def main():
     p.add_argument("--jobs", type=int, default=8)
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--full", action="store_true", help="忽略增量, 强制转换全部立绘")
+    p.add_argument(
+        "--hx",
+        action="store_true",
+        help="导出 _hx 和谐立绘 (默认跳过)",
+    )
 
     p = sub.add_parser("restore", help="还原单个 *_tex 包")
     p.add_argument("tex", help="Assets/painting/*_tex 路径")
@@ -50,7 +55,13 @@ def main():
 
     args = ap.parse_args()
     if args.cmd == "batch":
-        batch_restore.run(PROJECT_ROOT, jobs=args.jobs, limit=args.limit, full=args.full)
+        batch_restore.run(
+            PROJECT_ROOT,
+            jobs=args.jobs,
+            limit=args.limit,
+            full=args.full,
+            include_hx=args.hx,
+        )
     elif args.cmd == "restore":
         img = batch_restore.restore_bundle(args.tex, bust=args.bust)
         if img is None:

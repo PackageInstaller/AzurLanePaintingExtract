@@ -30,6 +30,8 @@ NEEDED_LUA = {
 }
 STATE_FILE = "version.json"
 SCRIPTS_NAME = "scripts64"
+# GGET/GSET 与 tools 2026-08-18 对齐; 改转换器时递增以强制重抽
+LUA_CONVERT_VER = 2
 
 
 def _scripts64_path(out_root):
@@ -89,6 +91,7 @@ def ensure_needed_lua(out_root, jobs=8):
             state = {}
     if (
         state.get("scripts64_md5") == cur_md5
+        and state.get("lua_convert_ver") == LUA_CONVERT_VER
         and all(os.path.isfile(_lua_dest(out_root, n)) for n in NEEDED_LUA)
     ):
         return True
@@ -134,7 +137,9 @@ def ensure_needed_lua(out_root, jobs=8):
         except OSError:
             pass
 
+    state["scripts64_md5"] = cur_md5
+    state["lua_convert_ver"] = LUA_CONVERT_VER
     with open(state_path, "w", encoding="utf-8") as f:
-        json.dump({"scripts64_md5": cur_md5}, f, ensure_ascii=False, indent=2)
+        json.dump(state, f, ensure_ascii=False, indent=2)
     console.print("[green]Lua 数据表就绪[/green]")
     return True
