@@ -37,6 +37,24 @@ _SKIP_TEX_SUFFIXES = frozenset(
         "shop_hx",
     }
 )
+
+
+def _resolve_prefab_key(out_root, prefab_key):
+    """实际 prefab 文件名。剧情 NPC 立绘常只有 painting/<key>_n, 没有 key 本体。
+
+    游戏 DialogueStoryPlayer: IsShowNPainting 且存在 painting/name_n 时加载 _n。
+    """
+    if not prefab_key:
+        return prefab_key
+    painting_dir = os.path.join(out_root, "Assets", "painting")
+    if os.path.isfile(os.path.join(painting_dir, prefab_key)):
+        return prefab_key
+    alt = prefab_key + "_n"
+    if os.path.isfile(os.path.join(painting_dir, alt)):
+        return alt
+    return prefab_key
+
+
 def _chan(c, key):
     return c[key] if isinstance(c, dict) else getattr(c, key)
 
@@ -247,6 +265,7 @@ def _bust_uses_mesh(out_root, key):
 
 def _layer_raw_size(out_root, key):
     """prefab 中 key 层 MeshImage 的 mRawSpriteSize。"""
+    key = _resolve_prefab_key(out_root, key)
     prefab = os.path.join(out_root, "Assets", "painting", key)
     if not os.path.isfile(prefab):
         return None
@@ -277,6 +296,11 @@ def _layer_raw_size(out_root, key):
             raw = tt.get("mRawSpriteSize")
             if raw and raw.get("x") and raw.get("y"):
                 return (raw["x"], raw["y"])
+        # memory 动画立绘根节点没有 MeshImage, 用 RectTransform.sizeDelta
+        rt = rt_by_go.get(root) or {}
+        sz = rt.get("m_SizeDelta") or {}
+        if sz.get("x") and sz.get("y"):
+            return (sz["x"], sz["y"])
     except Exception:
         return None
     return None
@@ -367,6 +391,7 @@ def _key_local_to_raw(key_rt, raw, delta, lx, ly):
 
 def _prefab_key_is_touming(out_root, prefab_key):
     """key 层 Sprite 是否为 touming 透明占位。"""
+    prefab_key = _resolve_prefab_key(out_root, prefab_key)
     prefab = os.path.join(out_root, "Assets", "painting", prefab_key)
     if not os.path.isfile(prefab):
         return False
@@ -407,6 +432,9 @@ def _skip_layer_name(nm):
     if low in _SKIP_LAYER_GO:
         return True
     if low.startswith("shop_hx") or low.startswith("shophx"):
+        return True
+    # memory 动画 prefab 的 frame_1+ 是 Animator 序列帧, 不能一次叠到静图上
+    if low.startswith("frame_") and low != "frame_0":
         return True
     return False
 
@@ -461,12 +489,25 @@ def _prefab_key_tex_path(painting_dir, prefab_key):
 def _layer_tex_path(painting_dir, layer_name, prefab_key):
     """子层对应的 *_tex。忽略大小写; _rw_n 节点常对应 *_rw。"""
     cands = []
+    if (layer_name or "").startswith("frame_"):
+        try:
+            n = int(layer_name.split("_", 1)[1])
+        except ValueError:
+            n = None
+        if n is not None:
+            cands.append(f"{prefab_key}_{n:05d}")
+            if prefab_key.endswith("_memory"):
+                cands.append(f"{prefab_key[: -len('_memory')]}_{n:05d}")
     if prefab_key.endswith("_n"):
+        parent = prefab_key[: -len("_n")]
         parts = layer_name.split("_")
+        if prefab_key.startswith("npc") and not (layer_name or "").startswith("npc"):
+            cands.append("npc" + layer_name)
         if len(parts) >= 2:
             cands.append(prefab_key + "_" + parts[-1])
             cands.append("_".join(parts[:-1]) + "_n_" + parts[-1])
         if layer_name.endswith("_rw"):
+            cands.append(parent + "_rw")
             cands.append(prefab_key + "_rw")
     if layer_name.endswith("_rw_n"):
         cands.append(layer_name[: -len("_n")])
@@ -493,6 +534,7 @@ def _prefab_extra_layers(out_root, prefab_key):
     `_n` prefab 的 key 常是 touming 透明占位; 部分皮肤没有 layers 容器,
     人物层直接挂在根节点下 (如 changmen_6)。
     """
+    prefab_key = _resolve_prefab_key(out_root, prefab_key)
     prefab = os.path.join(out_root, "Assets", "painting", prefab_key)
     if not os.path.isfile(prefab):
         return []
@@ -522,9 +564,13 @@ def _prefab_extra_layers(out_root, prefab_key):
             (mb for mb in mb_by_go.get(key_go, []) if "mRawSpriteSize" in mb),
             {},
         )
+        raw = key_mb.get("mRawSpriteSize") or {}
+        if not raw.get("x"):
+            sz = (rt_by_go.get(key_go) or {}).get("m_SizeDelta") or {}
+            raw = {"x": sz.get("x") or 0, "y": sz.get("y") or 0}
         key_info = {
             "rt": _rt_info(rt_by_go[key_go]),
-            "raw": key_mb.get("mRawSpriteSize") or {},
+            "raw": raw,
             "delta": (
                 key_mb.get("delta_offset_x", 0.0),
                 key_mb.get("delta_offset_y", 0.0),
@@ -605,6 +651,10 @@ def _layer_box_on_key(layer, canvas_size):
     lrt = layer["rt"]
     lw = lrt["size"]["x"] * lrt["scale"]["x"]
     lh = lrt["size"]["y"] * lrt["scale"]["y"]
+    lraw = layer.get("raw") or {}
+    # memory frame_* 的 sizeDelta 常为 0, 用 MeshImage.rawSize
+    if (not lw or not lh) and lraw.get("x") and lraw.get("y"):
+        lw, lh = lraw["x"], lraw["y"]
     px = src_cx + lrt["pos"]["x"]
     py = src_cy + lrt["pos"]["y"]
     left = px - lrt["pivot"]["x"] * lw
@@ -668,6 +718,7 @@ def _face_placement(out_root, key, canvas_size, target_layer="key"):
     返回 rawSize 画布坐标。
     rw 层: 保留旧的世界坐标换算 (近似), 且多数 _rw 已含默认脸。
     """
+    key = _resolve_prefab_key(out_root, key)
     prefab = os.path.join(out_root, "Assets", "painting", key)
     if not os.path.isfile(prefab):
         return None
@@ -807,6 +858,7 @@ def apply_prefab_faces(out_root, key, prefab_key, img, default_expr, dest_png):
       (shanfeng_2), 或不规则网格洞 (shanfeng)。yunlong_3 的 face 甚至是
       全身水体贴 (1926x2048), 不是小脸补丁。
     """
+    prefab_key = _resolve_prefab_key(out_root, prefab_key)
     exprs = _list_face_exprs(out_root, key)
     if not exprs:
         exprs = _list_face_exprs(out_root, prefab_key)
@@ -865,6 +917,7 @@ def _paste_face(target, face, pos):
 
 def restore_prefab_painting(out_root, prefab_key):
     """按游戏 setPaintingPrefab 还原: key 底图 + layers(含人物 _rw / _front)。"""
+    prefab_key = _resolve_prefab_key(out_root, prefab_key)
     painting_dir = os.path.join(out_root, "Assets", "painting")
     raw = _layer_raw_size(out_root, prefab_key)
     raw_size = (int(raw[0]), int(raw[1])) if raw else None

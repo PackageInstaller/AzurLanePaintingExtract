@@ -22,10 +22,14 @@ def output_name(key, basename, skins, ship_names, name_map=None):
     else:
         ship = key
         skin_name = None
-    ship = _resolve_namecodes(ship, name_map)
-    skin_name = _resolve_namecodes(skin_name, name_map)
+    ship = (_resolve_namecodes(ship, name_map) or "").strip()
+    skin_name = (_resolve_namecodes(skin_name, name_map) or "").strip() or None
     if skin_name and skin_name != ship:
         fname = f"{ship}_{skin_name}"
     else:
         fname = ship
+    kl = (key or "").lower()
+    # 剧情 NPC / memory 在表里常与本舰同名, 必须带资源 key 以免盖掉正式立绘
+    if kl.startswith("npc") or kl.endswith("_memory"):
+        fname = f"{fname}_{key}"
     return _safe(ship), _safe(fname)

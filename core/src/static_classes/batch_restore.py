@@ -32,6 +32,7 @@ from .painting_assets import (
     apply_prefab_faces,
     _prefab_extra_layers,
     _prefab_key_tex_path,
+    _resolve_prefab_key,
     UNITY_FALLBACK,
     restore_prefab_painting,
 )
@@ -75,6 +76,7 @@ def _is_layer_only_name(name):
 
 def _job_sources(out_root, prefab_key):
     """该 prefab 还原会读到的 *_tex, 用于增量判断。"""
+    prefab_key = _resolve_prefab_key(out_root, prefab_key)
     painting_dir = os.path.join(out_root, "Assets", "painting")
     out = []
     key_tex = _prefab_key_tex_path(painting_dir, prefab_key)
