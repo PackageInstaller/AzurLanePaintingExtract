@@ -55,6 +55,14 @@ def _is_hx_name(name):
     return "hx" in _name_tokens(name)
 
 
+def _is_n_variant_key(name):
+    """painting_filte_map 里常把 xxx_n / xxx_n_hx 列为独立组, 实际是局部背景变体。"""
+    tokens = _name_tokens(name)
+    if tokens[-1:] == ["n"]:
+        return True
+    return tokens[-2:] == ["n", "hx"]
+
+
 def _is_layer_only_name(name):
     """front/rw/middle 等只作为 prefab 子层, 不单独出图。"""
     tokens = _name_tokens(name)
@@ -81,10 +89,11 @@ def _job_sources(out_root, prefab_key):
     return out
 
 
-def run(out_root, jobs=8, limit=None, sync=True, full=False, include_hx=False):
+def run(out_root, jobs=8, limit=None, sync=True, full=False, include_hx=False, include_n=False):
     """同步并还原立绘: 默认先检查更新, 只转换有更新的立绘。
 
     include_hx: 为 True 时额外导出 _hx 和谐立绘; 默认跳过。
+    include_n: 为 True 时额外导出 _n 局部背景立绘; 默认跳过。
     """
     UnityPy.config.FALLBACK_UNITY_VERSION = UNITY_FALLBACK
 
@@ -139,7 +148,7 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False, include_hx=False):
             "errors": {},
             "skipped": [],
         }
-    # 按皮肤 key 出图: 全背景一张, 有 _n prefab 再出部分背景一张
+    # 按皮肤 key 出图: 全背景一张; --n 再出局部背景, --hx 再出和谐
     skin_keys = []
     seen_key = set()
     for f in files:
@@ -150,20 +159,38 @@ def run(out_root, jobs=8, limit=None, sync=True, full=False, include_hx=False):
             _is_layer_only_name(key)
             or _is_shophx_name(key)
             or (_is_hx_name(key) and not include_hx)
+            or _is_n_variant_key(key)
         ):
             continue
         seen_key.add(key)
         skin_keys.append(key)
 
+    if include_n:
+        for f in files:
+            key = res2key[f]
+            if key in seen_key or not _is_n_variant_key(key):
+                continue
+            if _is_layer_only_name(key) or _is_shophx_name(key):
+                continue
+            if _is_hx_name(key) and not include_hx:
+                continue
+            parent = (
+                key[: -len("_n_hx")] if key.endswith("_n_hx") else key[: -len("_n")]
+            )
+            if parent in seen_key or parent + "_hx" in seen_key:
+                continue
+            seen_key.add(key)
+            skin_keys.append(key)
+
     paint_jobs = []
     for key in skin_keys:
         paint_jobs.append((key, key, ""))
-        if os.path.isfile(os.path.join(painting_dir, key + "_n")):
+        if include_n and os.path.isfile(os.path.join(painting_dir, key + "_n")):
             paint_jobs.append((key, key + "_n", "n"))
         if include_hx:
             if os.path.isfile(os.path.join(painting_dir, key + "_hx")):
                 paint_jobs.append((key, key + "_hx", "hx"))
-            if os.path.isfile(os.path.join(painting_dir, key + "_n_hx")):
+            if include_n and os.path.isfile(os.path.join(painting_dir, key + "_n_hx")):
                 paint_jobs.append((key, key + "_n_hx", "n_hx"))
 
     main_groups = {}

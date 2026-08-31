@@ -4,9 +4,10 @@
 AzurLanePaintingExtract CLI
 
 子命令:
-    batch [--jobs N] [--limit N] [--full] [--hx]
+    batch [--jobs N] [--limit N] [--full] [--hx] [--n]
         先检查并下载 painting/paintingface 更新, 只转换有更新的立绘;
-        --full 强制转换全部; --hx 额外导出和谐立绘 (默认跳过)
+        --full 强制转换全部; --hx 额外导出和谐立绘 (默认跳过);
+        --n 额外导出局部背景立绘 (默认跳过)
         人物层 (_rw) 叠到背景 (key / _n) 上, 不单独导出半身/front/shop_hx
     restore TEX_PATH [--bust] [--out PNG]
         还原单个 *_tex 包 (Mesh 拼接 / Sprite 原图)
@@ -32,6 +33,7 @@ def main():
             "示例:\n"
             "  python3 cli.py batch --jobs 16\n"
             "  python3 cli.py batch --jobs 16 --full\n"
+            "  python3 cli.py batch --jobs 16 --n --hx\n"
             "  python3 cli.py restore xxx_tex --out x.png\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -47,6 +49,11 @@ def main():
         action="store_true",
         help="导出 _hx 和谐立绘 (默认跳过)",
     )
+    p.add_argument(
+        "--n",
+        action="store_true",
+        help="导出 _n 局部背景立绘 (默认跳过)",
+    )
 
     p = sub.add_parser("restore", help="还原单个 *_tex 包")
     p.add_argument("tex", help="Assets/painting/*_tex 路径")
@@ -61,6 +68,7 @@ def main():
             limit=args.limit,
             full=args.full,
             include_hx=args.hx,
+            include_n=args.n,
         )
     elif args.cmd == "restore":
         img = batch_restore.restore_bundle(args.tex, bust=args.bust)

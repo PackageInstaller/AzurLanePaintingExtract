@@ -320,6 +320,8 @@ def _list_face_exprs(out_root, key):
                 names.add(d.m_Name)
     except Exception:
         return []
+    # paintingface 里 *_sub 是 face_sub 子层, 不是独立表情 (ShipExpressionHelper._UpdateExpression)
+    names = {n for n in names if n and not str(n).endswith("_sub")}
     return sorted(names, key=lambda x: (len(x), x))
 
 
@@ -658,49 +660,6 @@ def _composite_paint_layers(out_root, prefab_key, base_img):
     return out
 
 
-def _is_rect_face_hole(img, pos, fsize, pad=8):
-    """脸部区域是否为嵌在不透明像素里的近似矩形透明挖空。
-
-    游戏 prefab 把 face 挂在 key 层上, 需要换表情的立绘会在脸上留出矩形
-    (或近似矩形) 透明通道。_rw / _n_rw 等完整网格通常已经画好默认脸,
-    计算坐标落在角色旁边的空白处, 那只是背景透明, 不是挖空, 不应贴脸。
-    """
-    try:
-        import numpy
-    except ImportError:
-        return False
-    x, y = int(pos[0]), int(pos[1])
-    w, h = int(fsize[0]), int(fsize[1])
-    if w < 8 or h < 8:
-        return False
-    alpha = numpy.array(img.getchannel("A"))
-    ih, iw = alpha.shape
-    x0, y0 = max(0, x), max(0, y)
-    x1, y1 = min(iw, x + w), min(ih, y + h)
-    if x1 - x0 < 8 or y1 - y0 < 8:
-        return False
-    region = alpha[y0:y1, x0:x1]
-    inner_t = float((region < 16).mean())
-    if inner_t < 0.6:
-        return False
-    ys, xs = numpy.where(region < 16)
-    if not len(xs):
-        return False
-    bw, bh = int(xs.max() - xs.min()) + 1, int(ys.max() - ys.min()) + 1
-    rect_fill = float(len(xs) / (bw * bh))
-    if rect_fill < 0.65:
-        return False
-    px0, py0 = max(0, x0 - pad), max(0, y0 - pad)
-    px1, py1 = min(iw, x1 + pad), min(ih, y1 + pad)
-    ring = alpha[py0:py1, px0:px1]
-    mask = numpy.ones_like(ring, dtype=bool)
-    mask[y0 - py0 : y1 - py0, x0 - px0 : x1 - px0] = False
-    border = ring[mask]
-    if border.size == 0:
-        return False
-    return float((border >= 128).mean()) > 0.45
-
-
 def _face_placement(out_root, key, canvas_size, target_layer="key"):
     """由 prefab 计算 face 节点在指定主立绘画布上的位置与尺寸 (像素)。
 
@@ -838,10 +797,15 @@ def _face_placement(out_root, key, canvas_size, target_layer="key"):
 
 
 def apply_prefab_faces(out_root, key, prefab_key, img, default_expr, dest_png):
-    """有矩形脸洞时贴表情: 默认表情写入 dest, 其余写成 _表情N。
+    """按游戏 SetExpression 贴表情: 默认表情写入 dest, 其余写成 _表情N。
 
-    游戏把 face 挂在 key 层; 没有挖空的 _rw 全身网格已经画好脸, 不能再贴。
-    没有 lua default 但有挖空时, 用 0 或第一张表情填主图。
+    PoolMgr.GetPainting + ShipExpressionHelper:
+      DefaultFaceless = (ship_skin_expression.default ~= "")
+      为真时显示 face 并贴 default; 为空则隐藏 face (默认脸已画在底图/_rw)。
+    游戏把 paintingface 叠在 face 节点上, 不要求底图有矩形透明挖空:
+      挖空可能已被 layers 填成背景 (daqinghuayu_idol), 或是白色占位
+      (shanfeng_2), 或不规则网格洞 (shanfeng)。yunlong_3 的 face 甚至是
+      全身水体贴 (1926x2048), 不是小脸补丁。
     """
     exprs = _list_face_exprs(out_root, key)
     if not exprs:
@@ -851,12 +815,11 @@ def apply_prefab_faces(out_root, key, prefab_key, img, default_expr, dest_png):
     place = _face_placement(out_root, prefab_key, img.size, "key")
     if place is None and prefab_key != key:
         place = _face_placement(out_root, key, img.size, "key")
-    if not place or not _is_rect_face_hole(img, place[0], place[1]):
+    if not place:
         return img
     pos, fsize = place
-    main_expr = default_expr if default_expr in exprs else None
-    if main_expr is None:
-        main_expr = "0" if "0" in exprs else exprs[0]
+    # 仅当 lua default 非空且能对上 paintingface 时改主图 (与 DefaultFaceless 一致)
+    main_expr = default_expr if default_expr and default_expr in exprs else None
     final = img
     for ex in exprs:
         face = _load_face_image(out_root, key, ex)
@@ -867,7 +830,7 @@ def apply_prefab_faces(out_root, key, prefab_key, img, default_expr, dest_png):
         fimg = face.resize(fsize) if face.size != fsize else face
         comp = img.copy()
         _paste_face(comp, fimg, pos)
-        if ex == main_expr:
+        if main_expr is not None and ex == main_expr:
             comp.save(dest_png)
             final = comp
         else:
